@@ -1,90 +1,81 @@
 # ISNscale
 
-**ISNscale** is an Android app that measures real-world object lengths using your phone's camera. It uses Computer Vision techniques to calculate distances based on reference objects or user-defined calibration.
+**ISNscale** is an Android app that measures real-world object lengths using the phone's camera.
+
+> **Status:** the camera preview, measurement UI and measurement math are implemented and
+> tested. The computer-vision calibration step (turning pixels into centimetres) is still a
+> documented placeholder in `analyzeImage()`.
 
 ## Features
 
-- 📏 **Real-time Measurement**: Point your camera at objects to measure their length
-- 📱 **CameraX Integration**: Modern camera API for smooth preview and processing
-- 🧮 **Computer Vision**: Edge detection and object recognition for accurate measurements
-- ⚙️ **Calibration Mode**: Set up with reference objects of known size
-- 📊 **Unit Conversion**: Measurements in centimeters (cm) with optional inches
-- 🎨 **Modern UI**: Material Design 3 with light/dark theme support
+- Real-time camera preview via **CameraX**
+- Material Design 3 UI (light/dark, Compose)
+- Calibration-based measurement math (`Measurement.kt`) with unit tests
+- Automated CI build that publishes installable APKs
 
-## How It Works
+## Installing on a phone
 
-1. Launch the app and grant camera permission
-2. Place a reference object of known length in the camera view
-3. Tap the object to calibrate the pixel-to-length ratio
-4. Tap two points on any object to measure its distance
-5. View the measurement in centimeters
+1. Open the latest successful run: <https://github.com/sureshisn/ISNscale/actions>
+2. Download an artifact at the bottom of the run page:
+   - **`debug-apk`** → `app-debug.apk` (recommended for testing)
+   - **`release-apk`** → `app-release.apk` (same app, non-debuggable)
+3. Unzip the artifact and copy the `.apk` to the phone.
+4. On the phone, allow "Install unknown apps" for the app you use to open the file
+   (Files/Chrome), then tap the APK.
+
+Both APKs are signed with the same key, so a newer build installs directly over an
+older one. If you install over a build made *before* this key existed, Android reports
+`App not installed` / signature mismatch — uninstall the old copy first:
+
+```bash
+adb uninstall com.example.isnscale
+adb install app-debug.apk
+```
+
+## Requirements
+
+- `minSdk` 24 (Android 7.0), `targetSdk` 35
+- A physical device with a camera (the emulator has no usable camera)
 
 ## Building
 
-### Requirements
-
-- Android Studio Dolphin (2021.3.1) or later
-- Android SDK 35 (Android 15) or later
-- Java JDK 11+
-
-### From Android Studio
-
-1. Clone the repository
-2. Open in Android Studio
-3. Sync Gradle files
-4. Click "Run"
-
-### From Command Line
-
 ```bash
-./gradlew assembleDebug
+./gradlew assembleDebug     # app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease   # app/build/outputs/apk/release/app-release.apk
+./gradlew testDebugUnitTest # unit tests
 ```
 
-Release APK:
-```bash
-./gradlew assembleRelease
-```
-
-## Project Structure
-
-```
-ISNscale/
-├── app/
-│   ├── src/main/java/com/example/isnscale/
-│   │   ├── MainActivity.kt          # Camera + measurement logic
-│   │   └── ui/theme/                  # Material3 theme files
-│   ├── src/main/res/
-│   │   ├── layout/activity_main.xml
-│   │   └── values/
-│   ├── build.gradle.kts               # App-level Gradle
-│   └── proguard-rules.pro
-├── build.gradle.kts                   # Project-level Gradle
-├── settings.gradle.kts
-└── README.md
-```
+JDK 17+ is required (Android SDK tooling refuses older JDKs). Android Studio's bundled
+JDK is fine.
 
 ## Permissions
 
-- `CAMERA`: Required for accessing the camera to measure objects
-- `INTERNET`: For downloading ML models (optional)
+- `CAMERA` — required to measure objects
 
-## Configuration
+## Project structure
 
-You can customize these settings in `MainActivity.kt`:
+```
+ISNscale/
+├── .github/workflows/build.yml   # CI: build debug + release APKs, run tests
+├── app/src/main/java/com/example/isnscale/
+│   ├── MainActivity.kt           # Activity, Compose UI, CameraX binding
+│   ├── Measurement.kt            # Pure measurement math (unit tested)
+│   └── ui/theme/                 # Material 3 colour scheme and typography
+├── app/src/test/java/...         # JUnit tests
+├── keystore/isnscale-demo.jks    # Public demo signing key (see below)
+├── build.gradle.kts              # Project-level Gradle
+├── settings.gradle.kts
+└── app/build.gradle.kts          # App-level Gradle
+```
 
-- `referenceDistanceCm`: Default reference distance for calibration (default: 10 cm)
+## Signing
+
+`keystore/isnscale-demo.jks` is a **throwaway demo key** committed on purpose so that CI
+produces installable APKs whose signature never changes between runs. Its password is
+`isnscale`. Do not reuse it for anything you actually publish.
+
+For a real release, create your own keystore and supply it through CI secrets instead.
 
 ## License
 
-This project is licensed under the MIT License.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
----
-
-*Made with ❤️ for measuring the world, one pixel at a time.*
+MIT

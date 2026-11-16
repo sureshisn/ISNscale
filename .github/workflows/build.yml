@@ -46,6 +46,11 @@ jobs:
       - name: Build debug APK
         run: ./gradlew --no-daemon --stacktrace assembleDebug
 
+      - name: Verify APK is signed
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -119,6 +124,12 @@ jobs:
 
       - name: Build release APK
         run: ./gradlew --no-daemon --stacktrace assembleRelease
+
+      - name: Verify APK is signed
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -n 1)
+          "$APKSIGNER" verify --print-certs "$APK"
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4

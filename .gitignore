@@ -20,6 +20,9 @@
 *.jks
 *.ks
 
+# ...except the public demo key this app is signed with (see app/build.gradle.kts)
+!keystore/isnscale-demo.jks
+
 # External native build folder generated in Android Studio 2.2 and later
 /externalNativeBuild/
 

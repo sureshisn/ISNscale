@@ -18,9 +18,33 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        // Stable signing key for every build (debug and release).
+        //
+        // The app is side-loaded, not published to Play, so a single key is
+        // used for both variants. This keeps the signature identical between
+        // CI runs, so a new APK installs over an older one instead of failing
+        // with INSTALL_FAILED_UPDATE_INCOMPATIBLE.
+        //
+        // This key is a throwaway demo key and is intentionally public. Do not
+        // reuse it for anything you actually distribute.
+        create("demo") {
+            storeFile = rootProject.file("keystore/isnscale-demo.jks")
+            storePassword = "isnscale"
+            keyAlias = "isnscale"
+            keyPassword = "isnscale"
+        }
+    }
+
     buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("demo")
+        }
         release {
             isMinifyEnabled = false
+            // Sign the release variant too, otherwise the artifact is
+            // *unsigned* and Android refuses to install it.
+            signingConfig = signingConfigs.getByName("demo")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
