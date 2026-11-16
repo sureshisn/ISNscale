@@ -12,8 +12,11 @@ import android.view.WindowManager
 import com.example.isnscale.Measurement
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
+import com.google.ar.core.DepthPoint
 import com.google.ar.core.Frame
 import com.google.ar.core.HitResult
+import com.google.ar.core.Plane
+import com.google.ar.core.Point
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.CameraNotAvailableException
@@ -128,15 +131,14 @@ class ArMeasureView @JvmOverloads constructor(
             }
 
             val newSession = Session(context)
-            val config = Config(newSession).apply {
-                planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
-                focusMode = Config.FocusMode.AUTO
-                lightEstimationMode = Config.LightEstimationMode.AMBIENT_INTENSITY
-                // Depth lets the user measure arbitrary objects, not just detected planes.
-                // It is not available on every supported device, so it is opt-in.
-                if (newSession.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
-                    depthMode = Config.DepthMode.AUTOMATIC
-                }
+            val config = Config(newSession)
+            config.setPlaneFindingMode(Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL)
+            config.setFocusMode(Config.FocusMode.AUTO)
+            config.setLightEstimationMode(Config.LightEstimationMode.AMBIENT_INTENSITY)
+            // Depth lets the user measure arbitrary objects, not just detected planes.
+            // It is not available on every supported device, so it is opt-in.
+            if (newSession.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
+                config.setDepthMode(Config.DepthMode.AUTOMATIC)
             }
             newSession.configure(config)
 
@@ -324,8 +326,8 @@ class ArMeasureView @JvmOverloads constructor(
     /**
      * Finds the real-world point under a screen tap.
      *
-     * Depth hits are preferred because they land on arbitrary objects. Plane hits are the
-     * fallback on devices without depth support.
+     * Depth hits are preferred because they land on arbitrary objects. Plane and feature
+     * point hits are the fallback on devices without depth support.
      */
     private fun hitTest(frame: Frame, x: Float, y: Float): FloatArray? {
         val hits = try {
@@ -334,12 +336,15 @@ class ArMeasureView @JvmOverloads constructor(
             emptyList()
         }
 
-        val hit = hits.firstOrNull { it.hitType == HitResult.HitType.DEPTH }
-            ?: hits.firstOrNull {
-                it.hitType == HitResult.HitType.PLANE && it.trackable.trackingState == TrackingState.TRACKING
+        val hit: HitResult? = hits.firstOrNull { it.trackable is DepthPoint }
+            ?: hits.firstOrNull { hit ->
+                val trackable = hit.trackable
+                (trackable is Plane || trackable is Point) &&
+                    trackable.trackingState == TrackingState.TRACKING
             }
+            ?: return null
 
-        val translation = hit?.hitPose?.translation ?: return null
-        return floatArrayOf(translation.x, translation.y, translation.z)
+        val pose = hit.hitPose ?: return null
+        return floatArrayOf(pose.tx(), pose.ty(), pose.tz())
     }
 }
