@@ -14,7 +14,6 @@ import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
 import com.google.ar.core.DepthPoint
 import com.google.ar.core.Frame
-import com.google.ar.core.HitResult
 import com.google.ar.core.Plane
 import com.google.ar.core.Point
 import com.google.ar.core.Session
@@ -336,7 +335,7 @@ class ArMeasureView @JvmOverloads constructor(
             emptyList()
         }
 
-        val hit: HitResult? = hits.firstOrNull { it.trackable is DepthPoint }
+        val hit = hits.firstOrNull { it.trackable is DepthPoint }
             ?: hits.firstOrNull { hit ->
                 val trackable = hit.trackable
                 (trackable is Plane || trackable is Point) &&
