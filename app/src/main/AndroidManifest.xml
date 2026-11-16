@@ -11,6 +11,14 @@
         android:name="android.hardware.camera.autofocus"
         android:required="false" />
 
+    <!--
+        ARCore ("AR") capability. required=false keeps the app installable on devices
+        without AR, where it shows an explanatory screen instead of crashing.
+    -->
+    <uses-feature
+        android:name="android.hardware.camera.ar"
+        android:required="false" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -18,9 +26,15 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.ISNscale">
 
+        <!-- Tells ARCore the app installs and works without AR present. -->
+        <meta-data
+            android:name="com.google.ar.core"
+            android:value="optional" />
+
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

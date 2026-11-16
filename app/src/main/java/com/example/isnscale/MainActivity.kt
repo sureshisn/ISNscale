@@ -1,18 +1,15 @@
 package com.example.isnscale
 
 import android.Manifest
-import android.content.pm.PackageManager
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,19 +17,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,14 +37,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.isnscale.ar.ArMeasureView
+import com.example.isnscale.ar.ArStatus
+import com.example.isnscale.ar.ArSupport
 import com.example.isnscale.ui.theme.ISNscaleTheme
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
 
@@ -63,7 +63,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MeasurementApp()
+                    MeasureScreen()
                 }
             }
         }
@@ -71,231 +71,267 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Main composable for the ISNscale measurement UI.
+ * Root screen: resolves permission + AR support, then shows the live AR measurement view.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MeasurementApp() {
+fun MeasureScreen() {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    var hasCameraPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.CAMERA
-            ) == PackageManager.PERMISSION_GRANTED
-        )
-    }
+    var hasCameraPermission by remember { mutableStateOf(ArSupport.hasCameraPermission(context)) }
+    var arStatus by remember { mutableStateOf(ArStatus.CHECKING) }
+    var useInches by remember { mutableStateOf(false) }
+    var supportCheckKey by remember { mutableStateOf(0) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted -> hasCameraPermission = granted }
 
-    LaunchedEffect(hasCameraPermission) {
-        if (!hasCameraPermission) {
+    // Re-check permission and AR support whenever the app comes back to the foreground, for
+    // example after the user installs Google Play Services for AR.
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasCameraPermission = ArSupport.hasCameraPermission(context)
+                supportCheckKey++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!ArSupport.hasCameraPermission(context)) {
             permissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
 
-    var measurementText by remember { mutableStateOf("0.0") }
-    var isMeasuring by remember { mutableStateOf(false) }
+    LaunchedEffect(supportCheckKey) {
+        arStatus = ArSupport.resolve(context)
+    }
 
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("ISNscale") },
-                actions = {
-                    IconButton(onClick = { /* Settings screen not implemented yet */ }) {
-                        Icon(
-                            imageVector = Icons.Filled.Settings,
-                            contentDescription = "Settings"
-                        )
-                    }
-                }
-            )
+    when {
+        !hasCameraPermission -> MessageScreen(
+            title = "Camera access needed",
+            body = "ISNscale measures real objects through the camera. Grant camera access to continue.",
+            actionLabel = "Grant camera access",
+            onAction = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+        )
+
+        arStatus == ArStatus.CHECKING -> LoadingScreen()
+
+        arStatus == ArStatus.NEEDS_INSTALL -> MessageScreen(
+            title = "One-time AR setup",
+            body = "This phone supports AR measurement, but Google Play Services for AR is not installed. " +
+                "Install it once and ISNscale can measure anything without a reference object.",
+            actionLabel = "Install AR services",
+            onAction = { ArSupport.requestInstall(context) },
+        )
+
+        arStatus == ArStatus.UNSUPPORTED -> MessageScreen(
+            title = "AR is not supported",
+            body = "This device cannot run ARCore, which ISNscale needs to know how far away objects are. " +
+                "AR works on most recent Android phones with Google Play Services for AR available.",
+            actionLabel = "Check again",
+            onAction = { supportCheckKey++ },
+        )
+
+        else -> ArMeasurementScreen(
+            useInches = useInches,
+            onToggleUnits = { useInches = !useInches },
+        )
+    }
+}
+
+/** The live AR camera view with the measurement readout on top of it. */
+@Composable
+private fun ArMeasurementScreen(useInches: Boolean, onToggleUnits: () -> Unit) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val arView = remember { ArMeasureView(context) }
+    val uiState by arView.state.collectAsStateWithLifecycle()
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> arView.onResume()
+                Lifecycle.Event.ON_PAUSE -> arView.onPause()
+                else -> Unit
+            }
         }
-    ) { innerPadding ->
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        // The observer only fires on future events, so start the session immediately if the
+        // lifecycle is already resumed.
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            arView.onResume()
+        }
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            arView.onPause()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        AndroidView(
+            factory = { arView },
+            modifier = Modifier.fillMaxSize()
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .systemBarsPadding()
+                .padding(16.dp)
         ) {
-            if (hasCameraPermission) {
-                CameraPreview(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
-                )
-            } else {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Camera permission required",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "ISNscale needs camera access to measure real-world objects.",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
+            StatusPill(
+                text = when {
+                    uiState.error != null -> "AR error"
+                    uiState.tracking -> "Tracking"
+                    else -> "Look for a surface"
+                },
+                healthy = uiState.tracking && uiState.error == null,
+            )
 
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Current Measurement",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = if (isMeasuring) "Measuring..." else "$measurementText cm",
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
+            Spacer(modifier = Modifier.weight(1f))
 
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "How to measure:",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "1. Place a known reference object (e.g. a calibration card) in view\n" +
-                            "2. Calibrate using the reference object\n" +
-                            "3. Tap two points to measure the distance\n" +
-                            "4. Read the result in centimeters",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            }
+            MeasurementCard(
+                value = uiState.distanceCm?.let { Measurement.format(it, imperial = useInches) } ?: "--",
+                hint = uiState.error ?: uiState.hint,
+                points = uiState.points,
+            )
 
-            Row(modifier = Modifier.padding(16.dp)) {
-                Button(
-                    onClick = { isMeasuring = true },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Measure")
-                }
-                Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(
-                    onClick = {
-                        isMeasuring = false
-                        measurementText = "0.0"
-                    },
-                    modifier = Modifier.weight(1f)
+                    onClick = { arView.clear() },
+                    modifier = Modifier.weight(1f),
                 ) {
-                    Text("Clear")
+                    Text("Reset")
+                }
+                Button(
+                    onClick = onToggleUnits,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(if (useInches) "Show cm" else "Show inches")
                 }
             }
         }
     }
 }
 
-/**
- * Hosts a CameraX preview and image analysis pipeline.
- */
 @Composable
-private fun CameraPreview(modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val previewView = remember {
-        PreviewView(context).apply {
-            scaleType = PreviewView.ScaleType.FILL_CENTER
-        }
-    }
-
-    DisposableEffect(lifecycleOwner) {
-        val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-        val providerFuture = ProcessCameraProvider.getInstance(context)
-
-        providerFuture.addListener(
-            {
-                try {
-                    val cameraProvider = providerFuture.get()
-
-                    val preview = Preview.Builder()
-                        .build()
-                        .also { it.setSurfaceProvider(previewView.surfaceProvider) }
-
-                    val imageAnalysis = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-                        .also {
-                            it.setAnalyzer(
-                                cameraExecutor,
-                                ImageAnalyzer { imageProxy -> analyzeImage(imageProxy) }
-                            )
-                        }
-
-                    cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(
-                        lifecycleOwner,
-                        CameraSelector.DEFAULT_BACK_CAMERA,
-                        preview,
-                        imageAnalysis
-                    )
-                } catch (_: Exception) {
-                    // Camera is unavailable (for example on an emulator without a camera).
-                }
-            },
-            ContextCompat.getMainExecutor(context)
+private fun StatusPill(text: String, healthy: Boolean) {
+    Row(
+        modifier = Modifier
+            .background(
+                color = Color.Black.copy(alpha = 0.45f),
+                shape = CircleShape,
+            )
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .background(
+                    color = if (healthy) Color(0xFF2ECC71) else Color(0xFFFFB300),
+                    shape = CircleShape,
+                )
+                .width(10.dp)
+                .height(10.dp)
         )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = text,
+            color = Color.White,
+            style = MaterialTheme.typography.labelLarge,
+        )
+    }
+}
 
-        onDispose {
-            runCatching { providerFuture.get().unbindAll() }
-            cameraExecutor.shutdown()
+@Composable
+private fun MeasurementCard(value: String, hint: String, points: Int) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = value,
+                fontSize = 48.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = if (points == 0) "Tap two points to measure" else "Point $points of 2",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = hint,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+            )
         }
     }
-
-    AndroidView(
-        factory = { previewView },
-        modifier = modifier
-    )
 }
 
-/**
- * Adapter that lets a lambda handle analysis frames.
- */
-private class ImageAnalyzer(
-    private val onFrame: (ImageProxy) -> Unit
-) : ImageAnalysis.Analyzer {
-
-    override fun analyze(image: ImageProxy) {
-        onFrame(image)
+@Composable
+private fun LoadingScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Starting AR…")
+        }
     }
 }
 
-/**
- * Placeholder for the computer-vision measurement pipeline.
- *
- * A production implementation would convert the frame to a bitmap, detect the
- * reference object, compute the pixel-to-centimetre ratio and publish it to the UI.
- */
-private fun analyzeImage(imageProxy: ImageProxy) {
-    imageProxy.close()
+@Composable
+private fun MessageScreen(
+    title: String,
+    body: String,
+    actionLabel: String,
+    onAction: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(onClick = onAction) {
+                Text(actionLabel)
+            }
+        }
+    }
 }
