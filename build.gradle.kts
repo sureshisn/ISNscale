@@ -1,19 +1,12 @@
-// ISNscale - Real-world Length Measurement App
+// ISNscale - Real-world length measurement app
 // Top-level Gradle build file
 
 plugins {
-    id("com.android.application") version "8.5.0" apply false
-    id("com.android.library") version "8.5.0" apply false
-    id("org.jetbrains.kotlin.android") version "2.0.0" apply false
+    id("com.android.application") version "8.7.3" apply false
+    id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
 }
 
-tasks.register("prepareDirectories") {
-    doLast {
-        file("build").mkdirs()
-        file("app/build").mkdirs()
-    }
-}
-
-tasks.register("clean", Delete::class) {
+tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

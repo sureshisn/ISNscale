@@ -1,61 +1,59 @@
 package com.example.isnscale.ui.theme
 
 import androidx.compose.material3.Typography
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// Set of Material3 typography styles
-val Typography = Typography(
-    headlineLarge = androidx.compose.material3.Typography.headlineLarge.copy(
+// Default Material 3 typography used as the base for the custom scale.
+private val MaterialDefaults = Typography()
+
+val AppTypography = Typography(
+    headlineLarge = MaterialDefaults.headlineLarge.copy(
         fontWeight = FontWeight.Bold,
         fontSize = 28.sp
     ),
-    headlineMedium = androidx.compose.material3.Typography.headlineMedium.copy(
+    headlineMedium = MaterialDefaults.headlineMedium.copy(
         fontWeight = FontWeight.SemiBold,
         fontSize = 22.sp
     ),
-    headlineSmall = androidx.compose.material3.Typography.headlineSmall.copy(
+    headlineSmall = MaterialDefaults.headlineSmall.copy(
         fontWeight = FontWeight.Medium,
         fontSize = 18.sp
     ),
-    titleLarge = androidx.compose.material3.Typography.titleLarge.copy(
+    titleLarge = MaterialDefaults.titleLarge.copy(
         fontWeight = FontWeight.SemiBold,
         fontSize = 22.sp
     ),
-    titleMedium = androidx.compose.material3.Typography.titleMedium.copy(
+    titleMedium = MaterialDefaults.titleMedium.copy(
         fontWeight = FontWeight.Medium,
         fontSize = 16.sp
     ),
-    titleSmall = androidx.compose.material3.Typography.titleSmall.copy(
+    titleSmall = MaterialDefaults.titleSmall.copy(
         fontWeight = FontWeight.Medium,
         fontSize = 14.sp
     ),
-    bodyLarge = androidx.compose.material3.Typography.bodyLarge.copy(
+    bodyLarge = MaterialDefaults.bodyLarge.copy(
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp
     ),
-    bodyMedium = androidx.compose.material3.Typography.bodyMedium.copy(
+    bodyMedium = MaterialDefaults.bodyMedium.copy(
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp
     ),
-    bodySmall = androidx.compose.material3.Typography.bodySmall.copy(
+    bodySmall = MaterialDefaults.bodySmall.copy(
         fontWeight = FontWeight.Normal,
         fontSize = 12.sp
     ),
-    labelLarge = androidx.compose.material3.Typography.labelLarge.copy(
+    labelLarge = MaterialDefaults.labelLarge.copy(
         fontWeight = FontWeight.Medium,
         fontSize = 14.sp
     ),
-    labelMedium = androidx.compose.material3.Typography.labelMedium.copy(
+    labelMedium = MaterialDefaults.labelMedium.copy(
         fontWeight = FontWeight.Medium,
         fontSize = 12.sp
     ),
-    labelSmall = androidx.compose.material3.Typography.labelSmall.copy(
+    labelSmall = MaterialDefaults.labelSmall.copy(
         fontWeight = FontWeight.Medium,
         fontSize = 10.sp
     )
 )
-
-// Custom font family (optional - uses system default)
-val AppFontFamily = FontFamily()
