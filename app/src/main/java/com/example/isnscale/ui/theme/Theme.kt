@@ -146,24 +146,16 @@ fun ISNscaleTheme(
         else -> LightColorScheme
     }
 
-    MaterialTheme(
+    return MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography(
-            headlineLarge = androidx.compose.material3.Typography.headlineLarge.copy(
-                fontFamily = androidx.compose.ui.text.font.FontFamily(
-                    androidx.compose.ui.text.font.Font(
-                        androidx.compose.ui.res.stringResource(id = android.R.string.ok)
-                    )
-                )
-            )
-        ),
-        shapes = Shapes(
-            small = RoundedCornerShape(4.dp),
-            medium = RoundedCornerShape(8.dp),
-            large = RoundedCornerShape(16.dp)
-        ),
+        typography = Typography,
+        shapes = AppShapes,
         content = content
     )
 }
 
-private val Shapes = Shapes()
+private val AppShapes = androidx.compose.material3.Shapes(
+    small = RoundedCornerShape(4.dp),
+    medium = RoundedCornerShape(8.dp),
+    large = RoundedCornerShape(16.dp)
+)

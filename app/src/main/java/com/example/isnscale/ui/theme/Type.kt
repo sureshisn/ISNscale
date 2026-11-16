@@ -28,7 +28,7 @@ val Typography = Typography(
         fontSize = 16.sp
     ),
     titleSmall = androidx.compose.material3.Typography.titleSmall.copy(
-        fontWeight = FontWeightMedium,
+        fontWeight = FontWeight.Medium,
         fontSize = 14.sp
     ),
     bodyLarge = androidx.compose.material3.Typography.bodyLarge.copy(
