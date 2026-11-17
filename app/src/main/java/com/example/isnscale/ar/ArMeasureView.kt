@@ -83,9 +83,6 @@ class ArMeasureView @JvmOverloads constructor(
     /** Set true after session is created (typically in onSurfaceCreated for GL thread safety). */
     private var sessionInitialized = false
 
-    /** Set true after onSurfaceCreated completes (GL context is ready). */
-    private var glReady = false
-
     /** The session needs to be created and configured. Done on GL thread. */
     private var pendingSessionCreation = false
 
@@ -238,7 +235,6 @@ class ArMeasureView @JvmOverloads constructor(
         Log.d("ISNscaleAr", "onSurfaceCreated - setting up GL")
         background.createOnGlThread()
         ruler.createOnGlThread()
-        glReady = true
         
         // If session creation was already requested, now is the time to do it
         if (pendingSessionCreation) {
