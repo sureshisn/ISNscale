@@ -169,20 +169,22 @@ class ArMeasureView @JvmOverloads constructor(
                 val moved = hypot((event.x - downX).toDouble(), (event.y - downY).toDouble())
                 if (moved < 30.0) {
                     synchronized(tapLock) {
-                        // frame.hitTest expects normalized screen coordinates [0..1], not pixels.
-                        // Guard against 0 dimensions before onSurfaceChanged has run.
+                        // frame.hitTest(xPx, yPx) expects PIXEL coordinates in the camera view - the
+                        // same space as the MotionEvent (origin top-left, size = surface width x
+                        // height). Do NOT normalize to [0..1]; out-of-range values never hit.
+                        pendingTapX = event.x
+                        pendingTapY = event.y
+                        _tapHit.value = false  // reset until hitTest confirms
+                        hasPendingTap = true
+                        // Normalized coords for the visual overlay (guard against 0 dims before
+                        // onSurfaceChanged has run).
                         val w = surfaceWidth.toFloat()
                         val h = surfaceHeight.toFloat()
                         if (w > 0f && h > 0f) {
                             lastTapX = event.x / w
                             lastTapY = event.y / h
-                            lastTapHit = false  // reset until hitTest confirms
+                            _tapPosition.value = floatArrayOf(lastTapX, lastTapY)
                         }
-                        pendingTapX = lastTapX
-                        pendingTapY = lastTapY
-                        _tapPosition.value = floatArrayOf(lastTapX, lastTapY)
-                        _tapHit.value = false
-                        hasPendingTap = true
                     }
                     performClick()
                 }
@@ -403,6 +405,8 @@ class ArMeasureView @JvmOverloads constructor(
             return
         }
 
+        // Only run hit tests while ARCore is actually tracking. Taps before that point just mean
+        // "finding surfaces".
         if (tracking != TrackingState.TRACKING) {
             _state.update {
                 it.copy(
@@ -410,9 +414,10 @@ class ArMeasureView @JvmOverloads constructor(
                     hint = "Finding surfaces… move the phone slowly",
                 )
             }
-        } else {
-            _state.update { it.copy(tracking = true) }
+            return
         }
+
+        _state.update { it.copy(tracking = true) }
 
         processTap(frame)
 
