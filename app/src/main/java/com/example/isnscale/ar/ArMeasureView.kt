@@ -411,7 +411,7 @@ class ArMeasureView @JvmOverloads constructor(
                 )
             }
         } else {
-            _state.update { it.copy(tracking = true, hint = null) }
+            _state.update { it.copy(tracking = true) }
         }
 
         processTap(frame)
