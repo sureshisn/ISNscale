@@ -240,7 +240,7 @@ class ArMeasureView @JvmOverloads constructor(
         if (pendingSessionCreation) {
             val wasPending = pendingSessionCreation
             pendingSessionCreation = false
-            createSessionInternal(hasCameraPermission(), requestInstall = !installRequested)
+            createSessionInternal(hasCameraPermission(context), requestInstall = !installRequested)
             Log.d("ISNscaleAr", "Session creation triggered from onSurfaceCreated: $wasPending")
         }
     }
@@ -261,7 +261,7 @@ class ArMeasureView @JvmOverloads constructor(
         // Create session on GL thread if requested
         if (pendingSessionCreation) {
             pendingSessionCreation = false
-            createSessionInternal(hasCameraPermission(), requestInstall = !installRequested)
+            createSessionInternal(hasCameraPermission(context), requestInstall = !installRequested)
         }
 
         val activeSession = session ?: return
