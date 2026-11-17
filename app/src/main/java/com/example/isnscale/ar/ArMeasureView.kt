@@ -150,8 +150,12 @@ class ArMeasureView @JvmOverloads constructor(
                 val moved = hypot((event.x - downX).toDouble(), (event.y - downY).toDouble())
                 if (moved < 30.0) {
                     synchronized(tapLock) {
-                        pendingTapX = event.x
-                        pendingTapY = event.y
+                        // frame.hitTest expects normalized screen coordinates [0..1], not pixels.
+                        // Guard against 0 dimensions before onSurfaceChanged has run.
+                        val w = surfaceWidth.toFloat()
+                        val h = surfaceHeight.toFloat()
+                        pendingTapX = if (w > 0f) event.x / w else event.x
+                        pendingTapY = if (h > 0f) event.y / h else event.y
                         hasPendingTap = true
                     }
                     performClick()
