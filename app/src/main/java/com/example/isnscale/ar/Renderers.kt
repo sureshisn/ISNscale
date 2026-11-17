@@ -195,7 +195,7 @@ internal class CameraBackgroundRenderer {
                 Coordinates2d.TEXTURE_NORMALIZED,
                 texCoords
             )
-        }.getOrElse { false }
+        }.isSuccess
 
         if (!transformOk) {
             throw IllegalStateException("transformCoordinates2d failed")
