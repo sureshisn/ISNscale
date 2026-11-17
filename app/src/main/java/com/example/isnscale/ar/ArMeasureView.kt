@@ -199,12 +199,14 @@ class ArMeasureView @JvmOverloads constructor(
         if (sessionInitialized) return
 
         if (!hasPermission) {
+            pendingSessionCreation = true
             _state.update { it.copy(error = "Camera permission is required") }
             return
         }
 
         try {
             val activity = context.findActivity() ?: run {
+                pendingSessionCreation = true
                 _state.update { it.copy(error = "Cannot find activity") }
                 return
             }
@@ -212,6 +214,7 @@ class ArMeasureView @JvmOverloads constructor(
             val installStatus = ArCoreApk.getInstance().requestInstall(activity, requestInstall)
             if (installStatus == ArCoreApk.InstallStatus.INSTALL_REQUESTED) {
                 installRequested = true
+                pendingSessionCreation = true
                 _state.update { it.copy(error = "Installing ARCore...") }
                 return
             }
@@ -244,11 +247,12 @@ class ArMeasureView @JvmOverloads constructor(
                 newSession.resume()
             } catch (e: Exception) {
                 // Without a resumed session the screen stays black forever - surface the
-                // reason and allow a retry on the next ON_RESUME.
+                // reason and allow a retry on the next frame.
                 Log.e("ISNscaleAr", "session.resume() failed", e)
                 runCatching { newSession.pause() }
                 session = null
                 sessionInitialized = false
+                pendingSessionCreation = true
                 _state.update { it.copy(error = "AR could not start the camera: ${e.message}") }
                 return
             }
@@ -256,11 +260,17 @@ class ArMeasureView @JvmOverloads constructor(
             sessionInitialized = true
             _state.update { it.copy(error = null) }
         } catch (e: UnavailableException) {
+            sessionInitialized = false
+            pendingSessionCreation = true
             _state.update { it.copy(error = "AR is not available on this device: ${e.message}") }
         } catch (e: CameraNotAvailableException) {
+            sessionInitialized = false
+            pendingSessionCreation = true
             _state.update { it.copy(error = "The camera is being used by another app") }
         } catch (e: Exception) {
             Log.e("ISNscaleAr", "Failed to create AR session", e)
+            sessionInitialized = false
+            pendingSessionCreation = true
             _state.update { it.copy(error = "Could not start AR: ${e.message}") }
         }
     }
@@ -311,8 +321,9 @@ class ArMeasureView @JvmOverloads constructor(
     override fun onDrawFrame(gl: GL10?) {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
 
-        // Create session on GL thread if requested
-        if (pendingSessionCreation) {
+        // Keep attempting session creation until it succeeds. If a previous attempt failed
+        // (e.g. camera busy), we retry on the next frame instead of staying black forever.
+        if (session == null && pendingSessionCreation) {
             pendingSessionCreation = false
             createSessionInternal(hasCameraPermission(context), requestInstall = !installRequested)
         }
@@ -328,11 +339,17 @@ class ArMeasureView @JvmOverloads constructor(
             null
         }
 
-        // Process all valid frames, including the first one (timestamp may be 0L initially)
+        // Process all valid frames, including the first one (timestamp may be 0L initially).
+        // A frame with timestamp 0L simply has no camera image yet; we skip drawing for that
+        // frame but keep the loop alive so subsequent frames render.
         if (frame == null) return
 
         // Draw the live camera background
-        background.draw(frame)
+        runCatching {
+            background.draw(frame)
+        }.onFailure { e ->
+            Log.e("ISNscaleAr", "background.draw failed", e)
+        }
 
         val camera = frame.camera
         if (camera.trackingState != TrackingState.TRACKING) {
