@@ -89,6 +89,14 @@ class ArMeasureView @JvmOverloads constructor(
     @Volatile
     private var sessionInitialized = false
 
+    /**
+     * The texture id last registered with ARCore. If the GL context is recreated the
+     * texture id changes, and ARCore must be told again - otherwise it keeps writing
+     * frames into a dead texture and the preview stays black.
+     */
+    @Volatile
+    private var registeredTextureId = -1
+
     /** The session needs to be created and configured. Done on GL thread. */
     @Volatile
     private var pendingSessionCreation = false
@@ -229,9 +237,21 @@ class ArMeasureView @JvmOverloads constructor(
             // Register the camera texture with ARCore - this tells ARCore
             // to write camera frames to the OpenGL texture for rendering.
             // IMPORTANT: textureId must be valid (created on GL thread) before this call.
-            runCatching { newSession.setCameraTextureName(background.textureId) }
+            newSession.setCameraTextureName(background.textureId)
+            registeredTextureId = background.textureId
 
-            runCatching { newSession.resume() }
+            try {
+                newSession.resume()
+            } catch (e: Exception) {
+                // Without a resumed session the screen stays black forever - surface the
+                // reason and allow a retry on the next ON_RESUME.
+                Log.e("ISNscaleAr", "session.resume() failed", e)
+                runCatching { newSession.pause() }
+                session = null
+                sessionInitialized = false
+                _state.update { it.copy(error = "AR could not start the camera: ${e.message}") }
+                return
+            }
 
             sessionInitialized = true
             _state.update { it.copy(error = null) }
@@ -257,7 +277,18 @@ class ArMeasureView @JvmOverloads constructor(
         Log.d("ISNscaleAr", "onSurfaceCreated - setting up GL")
         background.createOnGlThread()
         ruler.createOnGlThread()
-        
+
+        // If a session already exists, the GL context was just recreated: the camera
+        // texture id is new, so ARCore must be re-pointed at it or the preview stays black.
+        if (sessionInitialized && session != null && registeredTextureId != background.textureId) {
+            runCatching {
+                session?.setCameraTextureName(background.textureId)
+            }.onSuccess {
+                registeredTextureId = background.textureId
+                Log.d("ISNscaleAr", "Re-registered camera texture after GL context recreation")
+            }
+        }
+
         // If session creation was already requested, now is the time to do it
         if (pendingSessionCreation) {
             val wasPending = pendingSessionCreation
@@ -293,6 +324,7 @@ class ArMeasureView @JvmOverloads constructor(
             activeSession.update()
         } catch (e: Exception) {
             Log.e("ISNscaleAr", "Frame update failed", e)
+            _state.update { it.copy(error = "AR camera error: ${e.message}") }
             null
         }
 
