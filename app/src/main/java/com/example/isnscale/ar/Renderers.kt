@@ -105,10 +105,10 @@ internal class CameraBackgroundRenderer {
 
         /** Corner positions in normalised device coordinates (two triangles as a strip). */
         val QUAD_COORDS = floatArrayOf(
-            -1.0f, -1.0f, 0.0f,
-            -1.0f, 1.0f, 0.0f,
-            1.0f, -1.0f, 0.0f,
-            1.0f, 1.0f, 0.0f,
+            -1.0f, -1.0f, 0.0f, 1.0f,
+            -1.0f, 1.0f, 0.0f, 1.0f,
+            1.0f, -1.0f, 0.0f, 1.0f,
+            1.0f, 1.0f, 0.0f, 1.0f,
         )
 
         /** Corner UV coordinates as x,y pairs (8 floats) for transformCoordinates2d. */
@@ -219,7 +219,7 @@ internal class CameraBackgroundRenderer {
         GLES20.glUseProgram(program)
 
         GLES20.glEnableVertexAttribArray(positionAttrib)
-        GLES20.glVertexAttribPointer(positionAttrib, 3, GLES20.GL_FLOAT, false, 0, coords)
+        GLES20.glVertexAttribPointer(positionAttrib, 4, GLES20.GL_FLOAT, false, 0, coords)
 
         GLES20.glEnableVertexAttribArray(texCoordAttrib)
         GLES20.glVertexAttribPointer(texCoordAttrib, 2, GLES20.GL_FLOAT, false, 0, texBuffer)
@@ -283,8 +283,8 @@ internal class RulerRenderer {
         mvpUniform = GLES20.glGetUniformLocation(program, "u_Mvp")
         colorUniform = GLES20.glGetUniformLocation(program, "u_Color")
 
-        segment = GlUtil.createFloatBuffer(FloatArray(6))
-        marker = GlUtil.createFloatBuffer(FloatArray(3))
+        segment = GlUtil.createFloatBuffer(FloatArray(8))
+        marker = GlUtil.createFloatBuffer(FloatArray(4))
     }
 
     fun draw(mvp: FloatArray, start: FloatArray?, end: FloatArray?) {
@@ -304,11 +304,11 @@ internal class RulerRenderer {
         if (end != null) {
             segment?.apply {
                 clear()
-                put(start)
-                put(end)
+                put(floatArrayOf(start[0], start[1], start[2], 1.0f))
+                put(floatArrayOf(end[0], end[1], end[2], 1.0f))
                 position(0)
                 GLES20.glUniform4f(colorUniform, 0.13f, 0.87f, 0.98f, 1.0f)
-                GLES20.glVertexAttribPointer(positionAttrib, 3, GLES20.GL_FLOAT, false, 0, this)
+                GLES20.glVertexAttribPointer(positionAttrib, 4, GLES20.GL_FLOAT, false, 0, this)
                 GLES20.glDrawArrays(GLES20.GL_LINES, 0, 2)
             }
         }
@@ -317,9 +317,9 @@ internal class RulerRenderer {
         for (point in listOfNotNull(start, end)) {
             marker?.apply {
                 clear()
-                put(point)
+                put(floatArrayOf(point[0], point[1], point[2], 1.0f))
                 position(0)
-                GLES20.glVertexAttribPointer(positionAttrib, 3, GLES20.GL_FLOAT, false, 0, this)
+                GLES20.glVertexAttribPointer(positionAttrib, 4, GLES20.GL_FLOAT, false, 0, this)
                 GLES20.glDrawArrays(GLES20.GL_POINTS, 0, 1)
             }
         }
