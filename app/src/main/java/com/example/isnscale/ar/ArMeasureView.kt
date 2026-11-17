@@ -58,7 +58,9 @@ class ArMeasureView @JvmOverloads constructor(
     private val ruler = RulerRenderer()
 
     private var session: Session? = null
+    @Volatile
     private var installRequested = false
+    @Volatile
     private var resumed = false
 
     private var surfaceWidth = 0
@@ -84,9 +86,11 @@ class ArMeasureView @JvmOverloads constructor(
     private var downY = 0f
 
     /** Set true after session is created (typically in onSurfaceCreated for GL thread safety). */
+    @Volatile
     private var sessionInitialized = false
 
     /** The session needs to be created and configured. Done on GL thread. */
+    @Volatile
     private var pendingSessionCreation = false
 
     init {
@@ -102,6 +106,12 @@ class ArMeasureView @JvmOverloads constructor(
     override fun onResume() {
         super.onResume()
         resumed = true
+
+        // A session that already existed is left paused by onPause(); bring it back so the
+        // camera restarts after returning from another app or a permission dialog.
+        if (sessionInitialized) {
+            runCatching { session?.resume() }
+        }
     }
 
     override fun onPause() {

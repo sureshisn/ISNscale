@@ -178,21 +178,33 @@ internal class CameraBackgroundRenderer {
     fun draw(frame: Frame) {
         // Skip if not initialized (called before onSurfaceCreated completed)
         if (program == 0 || quadCoords == null || quadTexCoords == null) {
-            Log.w(TAG, "Skipping draw - shaders or buffers not initialized")
             return
         }
-        
+
+        // Frames with a 0 timestamp have no camera image attached yet (they are emitted
+        // while the camera is still starting). transformCoordinates2d would throw on
+        // them, and an exception escaping onDrawFrame crashes the whole process.
+        if (frame.timestamp == 0L) {
+            return
+        }
+
         val coords = quadCoords!!
         val texBuffer = quadTexCoords!!
 
-        // ARCore tells us how the camera image maps onto the quad. Recompute it whenever the
-        // display geometry changes (first frame, rotation, resize).
-        frame.transformCoordinates2d(
-            Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES,
-            QUAD_COORDS.copyOf(),
-            Coordinates2d.TEXTURE_NORMALIZED,
-            texCoords
-        )
+        // ARCore tells us how the camera image maps onto the quad. Recomputed every frame so
+        // the preview is always correctly aligned, even across rotations and resizes.
+        runCatching {
+            frame.transformCoordinates2d(
+                Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES,
+                QUAD_COORDS.copyOf(),
+                Coordinates2d.TEXTURE_NORMALIZED,
+                texCoords
+            )
+        }.onFailure { e ->
+            // A bad frame must never take down the GL thread (and with it the app).
+            Log.e(TAG, "transformCoordinates2d failed", e)
+            return
+        }
         texBuffer.clear()
         texBuffer.put(texCoords)
         texBuffer.position(0)
