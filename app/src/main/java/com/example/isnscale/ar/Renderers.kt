@@ -110,6 +110,14 @@ internal class CameraBackgroundRenderer {
             1.0f, -1.0f, 0.0f,
             1.0f, 1.0f, 0.0f,
         )
+
+        /** Corner UV coordinates as x,y pairs (8 floats) for transformCoordinates2d. */
+        val QUAD_UV = floatArrayOf(
+            -1.0f, -1.0f,
+            -1.0f, 1.0f,
+            1.0f, -1.0f,
+            1.0f, 1.0f,
+        )
     }
 
     /** OpenGL texture that ARCore writes the camera image into. */
@@ -191,7 +199,7 @@ internal class CameraBackgroundRenderer {
         val transformOk = runCatching {
             frame.transformCoordinates2d(
                 Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES,
-                QUAD_COORDS.copyOf(),
+                QUAD_UV,
                 Coordinates2d.TEXTURE_NORMALIZED,
                 texCoords
             )
