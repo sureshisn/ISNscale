@@ -1,6 +1,9 @@
 package com.example.isnscale.ar
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.Manifest
+import androidx.core.content.ContextCompat
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
@@ -158,6 +161,15 @@ class ArMeasureView @JvmOverloads constructor(
             )
         }
     }
+
+    /**
+     * Checks if camera permission has been granted.
+     */
+    private fun hasCameraPermission(context: Context): Boolean =
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
 
     /**
      * Creates the ARCore session - must be called ON THE GL THREAD.
