@@ -16,7 +16,10 @@ internal object GlUtil {
 
     fun loadShader(type: Int, source: String): Int {
         val shader = GLES20.glCreateShader(type)
-        if (shader == 0) return 0
+        if (shader == 0) {
+            Log.e(TAG, "Failed to create shader")
+            return 0
+        }
 
         GLES20.glShaderSource(shader, source)
         GLES20.glCompileShader(shader)
@@ -24,7 +27,8 @@ internal object GlUtil {
         val status = IntArray(1)
         GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, status, 0)
         if (status[0] == 0) {
-            Log.e(TAG, "Shader compile failed: ${GLES20.glGetShaderInfoLog(shader)}")
+            val log = GLES20.glGetShaderInfoLog(shader)
+            Log.e(TAG, "Shader compile failed: $log")
             GLES20.glDeleteShader(shader)
             return 0
         }
@@ -32,10 +36,16 @@ internal object GlUtil {
     }
 
     fun createProgram(vertexShader: Int, fragmentShader: Int): Int {
-        if (vertexShader == 0 || fragmentShader == 0) return 0
+        if (vertexShader == 0 || fragmentShader == 0) {
+            Log.e(TAG, "One or both shaders are 0")
+            return 0
+        }
 
         val program = GLES20.glCreateProgram()
-        if (program == 0) return 0
+        if (program == 0) {
+            Log.e(TAG, "Failed to create program")
+            return 0
+        }
 
         GLES20.glAttachShader(program, vertexShader)
         GLES20.glAttachShader(program, fragmentShader)
@@ -44,7 +54,8 @@ internal object GlUtil {
         val status = IntArray(1)
         GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, status, 0)
         if (status[0] == 0) {
-            Log.e(TAG, "Program link failed: ${GLES20.glGetProgramInfoLog(program)}")
+            val log = GLES20.glGetProgramInfoLog(program)
+            Log.e(TAG, "Program link failed: $log")
             GLES20.glDeleteProgram(program)
             return 0
         }
@@ -105,76 +116,84 @@ internal class CameraBackgroundRenderer {
 
     private var program = 0
     private var positionAttrib = 0
-    private var texCoordAttrib = 0
+    private var texCoordAttrib = -1
 
     private var quadCoords: FloatBuffer? = null
     private var quadTexCoords: FloatBuffer? = null
     private val texCoords = FloatArray(8)
 
     fun createOnGlThread() {
+        // Clear the color buffer to black initially
+        GLES20.glClearColor(0f, 0f, 0f, 1f)
+        
         val textures = IntArray(1)
         GLES20.glGenTextures(1, textures, 0)
         textureId = textures[0]
 
+        if (textureId == 0) {
+            Log.e(TAG, "Failed to generate texture ID")
+            return
+        }
+
+        // Create an external OES texture for camera frames
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
-        GLES20.glTexParameteri(
-            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-            GLES20.GL_TEXTURE_WRAP_S,
-            GLES20.GL_CLAMP_TO_EDGE
-        )
-        GLES20.glTexParameteri(
-            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-            GLES20.GL_TEXTURE_WRAP_T,
-            GLES20.GL_CLAMP_TO_EDGE
-        )
-        GLES20.glTexParameteri(
-            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-            GLES20.GL_TEXTURE_MIN_FILTER,
-            GLES20.GL_LINEAR
-        )
-        GLES20.glTexParameteri(
-            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-            GLES20.GL_TEXTURE_MAG_FILTER,
-            GLES20.GL_LINEAR
-        )
+        
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
 
         val vertexShader = GlUtil.loadShader(GLES20.GL_VERTEX_SHADER, VERTEX_SHADER)
         val fragmentShader = GlUtil.loadShader(GLES20.GL_FRAGMENT_SHADER, FRAGMENT_SHADER)
+
+        if (vertexShader == 0 || fragmentShader == 0) {
+            Log.e(TAG, "Failed to create shaders")
+            return
+        }
+
         program = GlUtil.createProgram(vertexShader, fragmentShader)
+
+        Log.d(TAG, "Shader program created: $program")
 
         // The shaders are owned by the program once linked.
         GLES20.glDeleteShader(vertexShader)
         GLES20.glDeleteShader(fragmentShader)
 
-        if (program == 0) return
+        if (program == 0) {
+            Log.e(TAG, "Failed to create program")
+            return
+        }
 
         positionAttrib = GLES20.glGetAttribLocation(program, "a_Position")
         texCoordAttrib = GLES20.glGetAttribLocation(program, "a_TexCoord")
+        
+        Log.d(TAG, "Attrib locations - position: $positionAttrib, texCoord: $texCoordAttrib")
 
         quadCoords = GlUtil.createFloatBuffer(QUAD_COORDS)
         quadTexCoords = GlUtil.createFloatBuffer(FloatArray(8))
     }
 
     fun draw(frame: Frame) {
-        if (program == 0) return
-        val coords = quadCoords ?: return
-        val texBuffer = quadTexCoords ?: return
+        // Skip if not initialized (called before onSurfaceCreated completed)
+        if (program == 0 || quadCoords == null || quadTexCoords == null) {
+            Log.w(TAG, "Skipping draw - shaders or buffers not initialized")
+            return
+        }
+        
+        val coords = quadCoords!!
+        val texBuffer = quadTexCoords!!
 
         // ARCore tells us how the camera image maps onto the quad. Recompute it whenever the
         // display geometry changes (first frame, rotation, resize).
-        if (frame.hasDisplayGeometryChanged()) {
-            frame.transformCoordinates2d(
-                Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES,
-                QUAD_COORDS.copyOf(),
-                Coordinates2d.TEXTURE_NORMALIZED,
-                texCoords
-            )
-            texBuffer.clear()
-            texBuffer.put(texCoords)
-            texBuffer.position(0)
-        }
-
-        if (frame.timestamp == 0L) return
+        frame.transformCoordinates2d(
+            Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES,
+            QUAD_COORDS.copyOf(),
+            Coordinates2d.TEXTURE_NORMALIZED,
+            texCoords
+        )
+        texBuffer.clear()
+        texBuffer.put(texCoords)
+        texBuffer.position(0)
 
         GLES20.glDisable(GLES20.GL_DEPTH_TEST)
         GLES20.glDepthMask(false)

@@ -80,6 +80,15 @@ class ArMeasureView @JvmOverloads constructor(
     private var downX = 0f
     private var downY = 0f
 
+    /** Set true after session is created (typically in onSurfaceCreated for GL thread safety). */
+    private var sessionInitialized = false
+
+    /** Set true after onSurfaceCreated completes (GL context is ready). */
+    private var glReady = false
+
+    /** The session needs to be created and configured. Done on GL thread. */
+    private var pendingSessionCreation = false
+
     init {
         setEGLContextClientVersion(2)
         setPreserveEGLContextOnPause(true)
@@ -93,7 +102,6 @@ class ArMeasureView @JvmOverloads constructor(
     override fun onResume() {
         super.onResume()
         resumed = true
-        ensureSession()
     }
 
     override fun onPause() {
@@ -103,68 +111,11 @@ class ArMeasureView @JvmOverloads constructor(
     }
 
     /**
-     * Creates the ARCore session on first use.
-     *
-     * Creating a session needs the camera permission and Google Play Services for AR.
-     * All failures are turned into a readable message instead of crashing the app.
+     * Marks that a session creation request has been made. Use this to trigger
+     * session creation on the GL thread.
      */
-    private fun ensureSession() {
-        val existing = session
-        if (existing != null) {
-            runCatching { existing.resume() }
-            return
-        }
-
-        if (!ArSupport.hasCameraPermission(context)) {
-            _state.update { it.copy(error = "Camera permission is required") }
-            return
-        }
-
-        val activity = context.findActivity() ?: return
-
-        try {
-            val installStatus = ArCoreApk.getInstance().requestInstall(activity, !installRequested)
-            if (installStatus == ArCoreApk.InstallStatus.INSTALL_REQUESTED) {
-                installRequested = true
-                return
-            }
-
-            val newSession = Session(context)
-            val config = Config(newSession)
-            config.setPlaneFindingMode(Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL)
-            config.setFocusMode(Config.FocusMode.AUTO)
-            config.setLightEstimationMode(Config.LightEstimationMode.AMBIENT_INTENSITY)
-            // Depth lets the user measure arbitrary objects, not just detected planes.
-            // It is not available on every supported device, so it is opt-in.
-            if (newSession.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
-                config.setDepthMode(Config.DepthMode.AUTOMATIC)
-            }
-            newSession.configure(config)
-
-            session = newSession
-
-            if (surfaceWidth > 0 && surfaceHeight > 0) {
-                runCatching {
-                    newSession.setDisplayGeometry(displayRotation(), surfaceWidth, surfaceHeight)
-                }
-            }
-            runCatching { newSession.resume() }
-
-            _state.update { it.copy(error = null) }
-        } catch (e: UnavailableException) {
-            _state.update { it.copy(error = "AR is not available on this device: ${e.message}") }
-        } catch (e: CameraNotAvailableException) {
-            _state.update { it.copy(error = "The camera is being used by another app") }
-        } catch (e: Exception) {
-            Log.e("ISNscaleAr", "Failed to create AR session", e)
-            _state.update { it.copy(error = "Could not start AR: ${e.message}") }
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun displayRotation(): Int {
-        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-        return windowManager?.defaultDisplay?.rotation ?: Surface.ROTATION_0
+    fun requestSessionCreation() {
+        pendingSessionCreation = true
     }
 
     // ------------------------------------------------------------------ input
@@ -211,32 +162,114 @@ class ArMeasureView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Creates the ARCore session - must be called ON THE GL THREAD.
+     *
+     * @param hasPermission Whether we have camera permission
+     * @param requestInstall Whether to request install if needed
+     */
+    internal fun createSessionInternal(hasPermission: Boolean, requestInstall: Boolean) {
+        if (sessionInitialized) return
+
+        if (!hasPermission) {
+            _state.update { it.copy(error = "Camera permission is required") }
+            return
+        }
+
+        try {
+            val activity = context.findActivity() ?: run {
+                _state.update { it.copy(error = "Cannot find activity") }
+                return
+            }
+
+            val installStatus = ArCoreApk.getInstance().requestInstall(activity, requestInstall)
+            if (installStatus == ArCoreApk.InstallStatus.INSTALL_REQUESTED) {
+                installRequested = true
+                _state.update { it.copy(error = "Installing ARCore...") }
+                return
+            }
+
+            val newSession = Session(context)
+            val config = Config(newSession)
+            config.setPlaneFindingMode(Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL)
+            config.setFocusMode(Config.FocusMode.AUTO)
+            config.setLightEstimationMode(Config.LightEstimationMode.AMBIENT_INTENSITY)
+            if (newSession.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
+                config.setDepthMode(Config.DepthMode.AUTOMATIC)
+            }
+            newSession.configure(config)
+
+            session = newSession
+
+            if (surfaceWidth > 0 && surfaceHeight > 0) {
+                runCatching {
+                    newSession.setDisplayGeometry(displayRotation(), surfaceWidth, surfaceHeight)
+                }
+            }
+
+            // Register the camera texture with ARCore - this tells ARCore
+            // to write camera frames to the OpenGL texture for rendering.
+            // IMPORTANT: textureId must be valid (created on GL thread) before this call.
+            runCatching { newSession.setCameraTextureName(background.textureId) }
+
+            runCatching { newSession.resume() }
+
+            sessionInitialized = true
+            _state.update { it.copy(error = null) }
+        } catch (e: UnavailableException) {
+            _state.update { it.copy(error = "AR is not available on this device: ${e.message}") }
+        } catch (e: CameraNotAvailableException) {
+            _state.update { it.copy(error = "The camera is being used by another app") }
+        } catch (e: Exception) {
+            Log.e("ISNscaleAr", "Failed to create AR session", e)
+            _state.update { it.copy(error = "Could not start AR: ${e.message}") }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun displayRotation(): Int {
+        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        return windowManager?.defaultDisplay?.rotation ?: Surface.ROTATION_0
+    }
+
     // ------------------------------------------------------------ GL rendering
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        GLES20.glClearColor(0f, 0f, 0f, 1f)
-        GLES20.glEnable(GLES20.GL_DEPTH_TEST)
-
+        Log.d("ISNscaleAr", "onSurfaceCreated - setting up GL")
         background.createOnGlThread()
         ruler.createOnGlThread()
-
-        session?.let { runCatching { it.setCameraTextureName(background.textureId) } }
+        glReady = true
+        
+        // If session creation was already requested, now is the time to do it
+        if (pendingSessionCreation) {
+            val wasPending = pendingSessionCreation
+            pendingSessionCreation = false
+            createSessionInternal(hasCameraPermission(), requestInstall = !installRequested)
+            Log.d("ISNscaleAr", "Session creation triggered from onSurfaceCreated: $wasPending")
+        }
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+        Log.d("ISNscaleAr", "onSurfaceChanged($width, $height)")
         GLES20.glViewport(0, 0, width, height)
         surfaceWidth = width
         surfaceHeight = height
-        session?.let { runCatching { it.setDisplayGeometry(displayRotation(), width, height) } }
+        session?.let { 
+            runCatching { it.setDisplayGeometry(displayRotation(), width, height) }
+        }
     }
 
     override fun onDrawFrame(gl: GL10?) {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
 
-        if (!resumed) return
-        val activeSession = session ?: return
+        // Create session on GL thread if requested
+        if (pendingSessionCreation) {
+            pendingSessionCreation = false
+            createSessionInternal(hasCameraPermission(), requestInstall = !installRequested)
+        }
 
-        runCatching { activeSession.setCameraTextureName(background.textureId) }
+        val activeSession = session ?: return
+        if (!resumed) return
 
         val frame: Frame? = try {
             activeSession.update()
@@ -245,8 +278,10 @@ class ArMeasureView @JvmOverloads constructor(
             null
         }
 
-        if (frame == null || frame.timestamp == 0L) return
+        // Process all valid frames, including the first one (timestamp may be 0L initially)
+        if (frame == null) return
 
+        // Draw the live camera background
         background.draw(frame)
 
         val camera = frame.camera
@@ -268,6 +303,7 @@ class ArMeasureView @JvmOverloads constructor(
         camera.getViewMatrix(viewMatrix, 0)
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, viewMatrix, 0)
 
+        // Draw the virtual ruler on top of the camera
         ruler.draw(mvpMatrix, startPoint, endPoint)
     }
 

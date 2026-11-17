@@ -154,7 +154,11 @@ private fun ArMeasurementScreen(useInches: Boolean, onToggleUnits: () -> Unit) {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> arView.onResume()
+                Lifecycle.Event.ON_RESUME -> {
+                    arView.onResume()
+                    // Request session creation - will happen on GL thread during onDrawFrame
+                    arView.requestSessionCreation()
+                }
                 Lifecycle.Event.ON_PAUSE -> arView.onPause()
                 else -> Unit
             }
@@ -165,6 +169,7 @@ private fun ArMeasurementScreen(useInches: Boolean, onToggleUnits: () -> Unit) {
         // lifecycle is already resumed.
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             arView.onResume()
+            arView.requestSessionCreation()
         }
 
         onDispose {
@@ -174,15 +179,15 @@ private fun ArMeasurementScreen(useInches: Boolean, onToggleUnits: () -> Unit) {
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
+        modifier = Modifier.fillMaxSize()
     ) {
+        // Full-screen camera preview (background)
         AndroidView(
             factory = { arView },
             modifier = Modifier.fillMaxSize()
         )
 
+        // UI overlay
         Column(
             modifier = Modifier
                 .fillMaxSize()
