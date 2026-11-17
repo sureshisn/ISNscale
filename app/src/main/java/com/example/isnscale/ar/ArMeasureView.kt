@@ -313,8 +313,14 @@ class ArMeasureView @JvmOverloads constructor(
         GLES20.glViewport(0, 0, width, height)
         surfaceWidth = width
         surfaceHeight = height
-        session?.let { 
+        // Always set display geometry when dimensions are known, so transformCoordinates2d
+        // works correctly from the first frame onwards.
+        session?.let {
             runCatching { it.setDisplayGeometry(displayRotation(), width, height) }
+                .onFailure { e ->
+                    Log.e("ISNscaleAr", "setDisplayGeometry failed", e)
+                    _state.update { it.copy(error = "AR display geometry error: ${e.message}") }
+                }
         }
     }
 
@@ -339,16 +345,19 @@ class ArMeasureView @JvmOverloads constructor(
             null
         }
 
-        // Process all valid frames, including the first one (timestamp may be 0L initially).
-        // A frame with timestamp 0L simply has no camera image yet; we skip drawing for that
-        // frame but keep the loop alive so subsequent frames render.
-        if (frame == null) return
+        // If we have a session but no frames are coming back, surface it so the user isn't
+        // staring at a black screen with no explanation.
+        if (frame == null) {
+            _state.update { it.copy(error = "Waiting for camera frames…") }
+            return
+        }
 
-        // Draw the live camera background
+        // Draw the live camera background. Any GL failure on one frame must not kill the loop.
         runCatching {
             background.draw(frame)
         }.onFailure { e ->
             Log.e("ISNscaleAr", "background.draw failed", e)
+            _state.update { it.copy(error = "AR render error: ${e.message}") }
         }
 
         val camera = frame.camera

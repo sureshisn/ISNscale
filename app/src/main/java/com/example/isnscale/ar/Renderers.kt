@@ -178,7 +178,7 @@ internal class CameraBackgroundRenderer {
     fun draw(frame: Frame) {
         // Skip if not initialized (called before onSurfaceCreated completed)
         if (program == 0 || quadCoords == null || quadTexCoords == null) {
-            return
+            throw IllegalStateException("Camera background renderer not initialized")
         }
 
         val coords = quadCoords!!
@@ -187,7 +187,7 @@ internal class CameraBackgroundRenderer {
         // ARCore tells us how the camera image maps onto the quad. Recomputed every frame so
         // the preview is always correctly aligned, even across rotations and resizes.
         // A bad frame (e.g. timestamp 0L before the camera is streaming) must not crash
-        // the GL thread — catch it and keep the render loop alive for the next frame.
+        // the GL thread — the caller catches this and keeps the render loop alive.
         val transformOk = runCatching {
             frame.transformCoordinates2d(
                 Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES,
@@ -195,11 +195,10 @@ internal class CameraBackgroundRenderer {
                 Coordinates2d.TEXTURE_NORMALIZED,
                 texCoords
             )
-        }.isSuccess
+        }.getOrElse { false }
 
         if (!transformOk) {
-            Log.w(TAG, "Skipping frame - transformCoordinates2d failed")
-            return
+            throw IllegalStateException("transformCoordinates2d failed")
         }
 
         texBuffer.clear()
