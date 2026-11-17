@@ -150,6 +150,8 @@ private fun ArMeasurementScreen(useInches: Boolean, onToggleUnits: () -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val arView = remember { ArMeasureView(context) }
     val uiState by arView.state.collectAsStateWithLifecycle()
+    val tapPosition by arView.tapPosition.collectAsStateWithLifecycle(floatArrayOf(0.5f, 0.5f))
+    val tapHit by arView.tapHit.collectAsStateWithLifecycle(false)
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -185,6 +187,16 @@ private fun ArMeasurementScreen(useInches: Boolean, onToggleUnits: () -> Unit) {
         AndroidView(
             factory = { arView },
             modifier = Modifier.fillMaxSize()
+        )
+
+        // Center crosshair - always visible so users know where to tap
+        Crosshair()
+
+        // Tap feedback dot - shows where user last tapped
+        TapDot(
+            x = tapPosition[0],
+            y = tapPosition[1],
+            hit = tapHit,
         )
 
         // UI overlay
@@ -228,6 +240,59 @@ private fun ArMeasurementScreen(useInches: Boolean, onToggleUnits: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+/** Center crosshair - iPhone Measure app style. */
+@Composable
+private fun Crosshair() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .align(Alignment.Center),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(2.dp)
+                    .background(Color.White)
+                    .height(24.dp),
+            )
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .width(2.dp)
+                    .background(Color.White),
+            )
+        }
+    }
+}
+
+/** Tap feedback dot - green for hit, red for miss. */
+@Composable
+private fun TapDot(x: Float, y: Float, hit: Boolean) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                translationX = (x - 0.5f) * size.width
+                // Compose y increases downward, matching Android touch coords
+                translationY = (y - 0.5f) * size.height
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(14.dp)
+                .background(
+                    color = if (hit) Color.Green else Color.Red,
+                    shape = CircleShape,
+                )
+                .alpha(0.85f)
+        )
     }
 }
 

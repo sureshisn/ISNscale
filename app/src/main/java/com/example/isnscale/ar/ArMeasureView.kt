@@ -54,6 +54,14 @@ class ArMeasureView @JvmOverloads constructor(
     private val _state = MutableStateFlow(ArUiState())
     val state: StateFlow<ArUiState> = _state
 
+    /** Last tap position in normalized screen coords [0..1], for visual feedback overlay. */
+    private val _tapPosition = MutableStateFlow(FloatArray(2))
+    val tapPosition: StateFlow<FloatArray> = _tapPosition
+
+    /** Whether the last tap successfully hit a surface. */
+    private val _tapHit = MutableStateFlow(false)
+    val tapHit: StateFlow<Boolean> = _tapHit
+
     private val background = CameraBackgroundRenderer()
     private val ruler = RulerRenderer()
 
@@ -84,6 +92,17 @@ class ArMeasureView @JvmOverloads constructor(
 
     private var downX = 0f
     private var downY = 0f
+
+    /** Last tap position in normalized screen coords [0..1], for visual feedback. */
+    @Volatile
+    private var lastTapX = 0f
+
+    @Volatile
+    private var lastTapY = 0f
+
+    /** Whether the last tap successfully hit a surface. */
+    @Volatile
+    private var lastTapHit = false
 
     /** Set true after session is created (typically in onSurfaceCreated for GL thread safety). */
     @Volatile
@@ -154,8 +173,15 @@ class ArMeasureView @JvmOverloads constructor(
                         // Guard against 0 dimensions before onSurfaceChanged has run.
                         val w = surfaceWidth.toFloat()
                         val h = surfaceHeight.toFloat()
-                        pendingTapX = if (w > 0f) event.x / w else event.x
-                        pendingTapY = if (h > 0f) event.y / h else event.y
+                        if (w > 0f && h > 0f) {
+                            lastTapX = event.x / w
+                            lastTapY = event.y / h
+                            lastTapHit = false  // reset until hitTest confirms
+                        }
+                        pendingTapX = lastTapX
+                        pendingTapY = lastTapY
+                        _tapPosition.value = floatArrayOf(lastTapX, lastTapY)
+                        _tapHit.value = false
                         hasPendingTap = true
                     }
                     performClick()
@@ -365,17 +391,28 @@ class ArMeasureView @JvmOverloads constructor(
         }
 
         val camera = frame.camera
-        if (camera.trackingState != TrackingState.TRACKING) {
+        val tracking = camera.trackingState
+
+        if (tracking == TrackingState.STOPPED) {
             _state.update {
                 it.copy(
                     tracking = false,
-                    hint = "Move the phone slowly so AR can find surfaces",
+                    hint = "AR lost tracking - move the phone slowly to re-find surfaces",
                 )
             }
             return
         }
 
-        _state.update { it.copy(tracking = true) }
+        if (tracking != TrackingState.TRACKING) {
+            _state.update {
+                it.copy(
+                    tracking = false,
+                    hint = "Finding surfaces… move the phone slowly",
+                )
+            }
+        } else {
+            _state.update { it.copy(tracking = true, hint = null) }
+        }
 
         processTap(frame)
 
@@ -398,13 +435,18 @@ class ArMeasureView @JvmOverloads constructor(
 
         val point = hitTest(frame, tap.first, tap.second)
         if (point == null) {
+            lastTapHit = false
+            _tapHit.value = false
             _state.update {
                 it.copy(
-                    hint = "No surface there - point at the object and tap again",
+                    hint = "No surface there - move phone to find surfaces, then tap again",
                 )
             }
             return
         }
+
+        lastTapHit = true
+        _tapHit.value = true
 
         val first = startPoint
         if (first == null || endPoint != null) {
@@ -442,7 +484,8 @@ class ArMeasureView @JvmOverloads constructor(
      * Finds the real-world point under a screen tap.
      *
      * Depth hits are preferred because they land on arbitrary objects. Plane and feature
-     * point hits are the fallback on devices without depth support.
+     * point hits are the fallback on devices without depth support. On budget devices like
+     * the vivo t5x, tracking may not be perfect, so we accept ACCEPTABLE tracking too.
      */
     private fun hitTest(frame: Frame, x: Float, y: Float): FloatArray? {
         val hits = try {
@@ -451,15 +494,39 @@ class ArMeasureView @JvmOverloads constructor(
             emptyList()
         }
 
-        val hit = hits.firstOrNull { it.trackable is DepthPoint }
-            ?: hits.firstOrNull { hit ->
-                val trackable = hit.trackable
-                (trackable is Plane || trackable is Point) &&
-                    trackable.trackingState == TrackingState.TRACKING
-            }
-            ?: return null
+        if (hits.isEmpty()) return null
 
-        val pose = hit.hitPose ?: return null
-        return floatArrayOf(pose.tx(), pose.ty(), pose.tz())
+        // Strategy 1: Depth hit - lands on arbitrary objects (preferred)
+        val depthHit = hits.firstOrNull { it.trackable is DepthPoint }
+        if (depthHit != null) {
+            depthHit.hitPose?.let { return floatArrayOf(it.tx(), it.ty(), it.tz()) }
+        }
+
+        // Strategy 2: Plane hit with any tracking state (not just TRACKING)
+        val planeHit = hits.firstOrNull { hit ->
+            val trackable = hit.trackable
+            trackable is Plane && trackable.trackingState != TrackingState.STOPPED
+        }
+        if (planeHit != null) {
+            planeHit.hitPose?.let { return floatArrayOf(it.tx(), it.ty(), it.tz()) }
+        }
+
+        // Strategy 3: Feature point hit with any tracking state
+        val pointHit = hits.firstOrNull { hit ->
+            val trackable = hit.trackable
+            trackable is Point && trackable.trackingState != TrackingState.STOPPED
+        }
+        if (pointHit != null) {
+            pointHit.hitPose?.let { return floatArrayOf(it.tx(), it.ty(), it.tz()) }
+        }
+
+        // Strategy 4: Last resort - first hit regardless of type/tracking
+        val firstHit = hits.firstOrNull { it.hitPose != null }
+        if (firstHit != null) {
+            val pose = firstHit.hitPose!!
+            return floatArrayOf(pose.tx(), pose.ty(), pose.tz())
+        }
+
+        return null
     }
 }
