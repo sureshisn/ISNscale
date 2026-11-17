@@ -1,24 +1,27 @@
 # ISNscale
 
-**ISNscale** turns your phone into an AR measuring tape. Point the camera at anything, tap two
-points on it, and read the real-world distance in centimetres. No calibration card, no reference
-object, no ruler.
+**ISNscale** is an **ARCore** measuring tape for Android. ARCore supplies pose tracking and, on
+supported phones, a depth map; ISNscale turns your taps into 3D world points, computes the
+straight-line distance between them, and draws it over the camera feed. No calibration card, no
+reference object, no ruler.
 
 ## How it works
-
-The app is built on **ARCore**, the same technology behind commercial AR measuring apps:
 
 1. ARCore tracks the phone's position and orientation in 3D space.
 2. Each tap is turned into a real-world 3D point using ARCore hit testing, which uses the
    **Depth API** on supported phones to land on arbitrary objects (not just detected floors
    and walls).
-3. The distance is computed between those two 3D points, so the result is a true centimetre
-   measurement rather than a pixel estimate.
-4. The virtual ruler is drawn between the two points and stays glued to the object as you move
-   the phone.
+3. The distance is computed between those two 3D points.
+4. The virtual ruler is drawn between the two points and follows the object as you move the
+   phone.
 
-Because the measurement comes from real depth, the phone's own size, camera height, or any
-reference object are irrelevant.
+Each tap is resolved by a four-tier fallback: a depth hit if one is available, then a detected
+plane, then a tracked feature point, and finally any hit ARCore returns. The last tier accepts
+approximate surfaces, so a tap made while tracking is weak can land imprecisely.
+
+Because ARCore supplies a depth estimate for each tapped point, no calibration card or reference
+object is needed. That depth is inferred from motion and sensors rather than measured directly,
+so the accuracy figures below are approximate.
 
 ## Features
 
@@ -49,12 +52,19 @@ those show an explanatory screen instead of crashing.
 3. Move the phone slowly until the status pill reads **Tracking**.
 4. Tap the first end of what you want to measure — a white marker appears.
 5. Tap the second end — a cyan line joins the markers and the distance is shown.
-6. Tap anywhere to start a new measurement, or press **Reset**.
+6. Tap a surface to start a new measurement, or press **Reset**.
 7. Use **Show inches / Show cm** to switch units.
 
 Accuracy is typically within a centimetre or two at short range on phones with depth support;
 on phones without the Depth API, taps only land on detected planes, so flat surfaces
-(floor, table, wall) measure best.
+(floor, table, wall) measure best. Accuracy degrades as the measured span grows.
+
+## Limits
+
+Low light, low-texture surfaces (blank walls, glass, gloss), fast movement, and reflective,
+transparent, or moving objects all degrade tracking and depth. When tracking stops, the ruler and
+readout disappear and the stored endpoints go stale — re-tap after tracking recovers. There is no
+re-anchoring, no measurement history, and nothing is persisted between sessions.
 
 ## Installing on a phone
 
